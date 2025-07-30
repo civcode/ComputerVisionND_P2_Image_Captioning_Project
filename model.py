@@ -8,14 +8,20 @@ class EncoderCNN(nn.Module):
         # Using ResNet-34 for a lighter model
         #resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         resnet = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
+        
+        # Freeze all layers
         for param in resnet.parameters():
             param.requires_grad_(False)
+        
+        # Unfreeze only the last convolutional block
+        for param in resnet.layer4.parameters():
+            param.requires_grad = True
         
         modules = list(resnet.children())[:-1]
         self.resnet = nn.Sequential(*modules)
         self.batch_norm = nn.BatchNorm1d(resnet.fc.in_features)
         self.embed = nn.Linear(resnet.fc.in_features, embed_size)
-        self.drop = nn.Dropout(p=0.5)
+        self.drop = nn.Dropout(p=0.3)
         
 
     def forward(self, images):
@@ -31,11 +37,12 @@ class DecoderRNN(nn.Module):
         super(DecoderRNN, self).__init__()
         self.embed = nn.Embedding(vocab_size, embed_size)
         #self.rnn = nn.GRU(embed_size, hidden_size, num_layers, batch_first=True)
-        self.rnn = nn.GRU(embed_size, hidden_size, num_layers, batch_first=True, dropout=0.5 if num_layers > 1 else 0)
+        self.rnn = nn.GRU(embed_size, hidden_size, num_layers, batch_first=True, dropout=0.3 if num_layers > 1 else 0)
         #self.rnn = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True)
+        #self.rnn = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True, dropout=0.5 if num_layers > 1 else 0)
         self.linear = nn.Linear(hidden_size, vocab_size)
-        self.drop1 = nn.Dropout(p=0.5)
-        self.drop2 = nn.Dropout(p=0.5)
+        self.drop1 = nn.Dropout(p=0.3)
+        self.drop2 = nn.Dropout(p=0.3)
 
     def forward(self, features, captions):
         embeddings = self.embed(captions[:, :-1])  # Exclude the <end> token
