@@ -97,6 +97,6 @@ class DecoderRNN(nn.Module):
             predicted_sentence.append(predicted)
 
             inputs = self.embed(predicted).unsqueeze(1)  # (B, 1, embed)
-
+            
         return torch.stack(predicted_sentence, dim=1)  # (B, max_len)
 
