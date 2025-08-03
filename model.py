@@ -19,7 +19,7 @@ class EncoderCNN(nn.Module):
         # Keep layers up to layer4 (no avgpool)
         self.resnet = nn.Sequential(*list(resnet.children())[:-2])  # Output: (B, 2048, 7, 7)
         self.embed = nn.Linear(2048, embed_size)
-        self.drop = nn.Dropout(p=0.3)
+        self.drop = nn.Dropout(p=0.5)
 
     def forward(self, images):
         features = self.resnet(images)  # (B, 2048, 7, 7)
@@ -59,15 +59,16 @@ class DecoderRNN(nn.Module):
         self.embed = nn.Embedding(vocab_size, embed_size)
         self.rnn = nn.GRU(embed_size + embed_size, hidden_size, num_layers, batch_first=True, dropout=0.3 if num_layers > 1 else 0)
         self.linear = nn.Linear(hidden_size, vocab_size)
-        self.drop1 = nn.Dropout(p=0.3)
-        self.drop2 = nn.Dropout(p=0.3)
+        self.drop1 = nn.Dropout(p=0.5)
+        self.drop2 = nn.Dropout(p=0.5)
 
     def forward(self, encoder_out, captions):
         embeddings = self.embed(captions[:, :-1])  # (B, T, embed)
         embeddings = self.drop1(embeddings)
 
         batch_size, max_len, _ = embeddings.size()
-        h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+        #h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+        h = torch.zeros(self.rnn.num_layers, batch_size, self.rnn.hidden_size).to(encoder_out.device)
 
         outputs = []
         for t in range(max_len):
@@ -85,7 +86,9 @@ class DecoderRNN(nn.Module):
         inputs = torch.zeros(batch_size, dtype=torch.long).to(encoder_out.device)  # start token idx (e.g., <BOS>)
         inputs = self.embed(inputs).unsqueeze(1)  # (B, 1, embed)
 
-        h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+        #h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+        h = torch.zeros(self.rnn.num_layers, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+
         predicted_sentence = []
 
         for _ in range(max_len):
