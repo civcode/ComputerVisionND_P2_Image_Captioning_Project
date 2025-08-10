@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+import torch.nn.functional as F
 
 # === ENCODER === #
 class EncoderCNN(nn.Module):
@@ -67,7 +68,6 @@ class DecoderRNN(nn.Module):
         embeddings = self.drop1(embeddings)
 
         batch_size, max_len, _ = embeddings.size()
-        #h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
         h = torch.zeros(self.rnn.num_layers, batch_size, self.rnn.hidden_size).to(encoder_out.device)
 
         outputs = []
@@ -81,13 +81,23 @@ class DecoderRNN(nn.Module):
         outputs = torch.stack(outputs, dim=1)  # (B, T, vocab_size)
         return outputs
 
-    def sample(self, encoder_out, max_len=20):
+
+    def sample(self, encoder_out, max_len=20, temperature=1.0, top_k=None, start_token=0):
+        """
+        Generate captions with temperature and top-k sampling.
+
+        Args:
+            encoder_out (Tensor): (B, 49, embed_size) encoder features
+            max_len (int): Maximum length of the caption
+            temperature (float): Softmax temperature (default: 1.0)
+            top_k (int or None): If set, restrict sampling to top-k tokens
+            start_token (int): Index of the <BOS> token
+        """
         batch_size = encoder_out.size(0)
-        inputs = torch.zeros(batch_size, dtype=torch.long).to(encoder_out.device)  # start token idx (e.g., <BOS>)
+        inputs = torch.full((batch_size,), start_token, dtype=torch.long, device=encoder_out.device)
         inputs = self.embed(inputs).unsqueeze(1)  # (B, 1, embed)
 
-        #h = torch.zeros(1, batch_size, self.rnn.hidden_size).to(encoder_out.device)
-        h = torch.zeros(self.rnn.num_layers, batch_size, self.rnn.hidden_size).to(encoder_out.device)
+        h = torch.zeros(self.rnn.num_layers, batch_size, self.rnn.hidden_size, device=encoder_out.device)
 
         predicted_sentence = []
 
@@ -95,11 +105,23 @@ class DecoderRNN(nn.Module):
             context, _ = self.attention(encoder_out, h[0])  # (B, embed)
             rnn_input = torch.cat((inputs.squeeze(1), context), dim=1).unsqueeze(1)  # (B, 1, embed*2)
             output, h = self.rnn(rnn_input, h)  # (B, 1, hidden)
-            output = self.linear(output.squeeze(1))  # (B, vocab_size)
-            _, predicted = output.max(1)  # (B,)
-            predicted_sentence.append(predicted)
+            logits = self.linear(output.squeeze(1))  # (B, vocab_size)
 
-            inputs = self.embed(predicted).unsqueeze(1)  # (B, 1, embed)
-            
+            # Apply temperature
+            logits = logits / temperature
+
+            # Convert to probabilities
+            probs = F.softmax(logits, dim=-1)
+
+            # Apply top-k filtering
+            if top_k is not None:
+                topk_probs, topk_indices = torch.topk(probs, top_k, dim=-1)
+                next_token = topk_indices[torch.arange(batch_size), torch.multinomial(topk_probs, 1).squeeze()]
+            else:
+                next_token = torch.multinomial(probs, 1).squeeze(1)
+
+            predicted_sentence.append(next_token)
+
+            inputs = self.embed(next_token).unsqueeze(1)
+
         return torch.stack(predicted_sentence, dim=1)  # (B, max_len)
-
